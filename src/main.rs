@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
+mod eval;
 mod parse;
 
 #[derive(Parser)]
@@ -44,6 +45,24 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Score a single eval with a value
+    Score {
+        /// Eval type: boolean, ordinal:MIN..MAX, continuous, range:LOW..HIGH
+        #[arg(short = 't', long = "type")]
+        eval_type: String,
+        /// The raw value to score
+        value: f64,
+        /// Optional eval name
+        #[arg(short, long)]
+        name: Option<String>,
+    },
+    /// Score all typed evals in a file (reads harness, scores from provided values)
+    ScoreFile {
+        /// Source file containing harness with typed evals
+        file: PathBuf,
+        /// JSON object mapping eval names to raw values, e.g. '{"hook_count": 12}'
+        values: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -54,6 +73,12 @@ fn main() -> Result<()> {
         Command::Inventory { dir, ext } => cmd_inventory(&dir, ext.as_deref()),
         Command::Diff { file } => cmd_diff(&file),
         Command::Coverage { dir, ext, json } => cmd_coverage(&dir, ext.as_deref(), json),
+        Command::Score {
+            eval_type,
+            value,
+            name,
+        } => cmd_score(&eval_type, value, name.as_deref()),
+        Command::ScoreFile { file, values } => cmd_score_file(&file, &values),
     }
 }
 
@@ -190,6 +215,42 @@ fn cmd_coverage(dir: &Path, ext_filter: Option<&str>, json_output: bool) -> Resu
     Ok(())
 }
 
+fn cmd_score(eval_type_str: &str, value: f64, name: Option<&str>) -> Result<()> {
+    let et = eval::parse_eval_type(eval_type_str)
+        .ok_or_else(|| anyhow::anyhow!("invalid eval type: {}", eval_type_str))?;
+    let mut result = et.score(value);
+    result.name = name.unwrap_or("eval").to_string();
+    let json = serde_json::to_string_pretty(&result)?;
+    println!("{}", json);
+    Ok(())
+}
+
+fn cmd_score_file(file: &Path, values_json: &str) -> Result<()> {
+    let content = std::fs::read_to_string(file)
+        .with_context(|| format!("failed to read {}", file.display()))?;
+    let lang = parse::detect_language(file);
+    let harness = parse::extract_harness(&content, lang);
+
+    let values: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(values_json).with_context(|| "invalid JSON for values")?;
+
+    let mut results = Vec::new();
+    for e in &harness.evals {
+        if let Some(et) = &e.eval_type
+            && let Some(val) = values.get(&e.name)
+            && let Some(v) = val.as_f64()
+        {
+            let mut result = et.score(v);
+            result.name = e.name.clone();
+            results.push(result);
+        }
+    }
+
+    let json = serde_json::to_string_pretty(&results)?;
+    println!("{}", json);
+    Ok(())
+}
+
 fn walk_files(
     dir: &Path,
     extensions: &[&str],
@@ -207,10 +268,10 @@ fn walk_files(
                 continue;
             }
             walk_files(&path, extensions, callback)?;
-        } else if let Some(ext) = path.extension() {
-            if extensions.iter().any(|e| ext == *e) {
-                callback(&path);
-            }
+        } else if let Some(ext) = path.extension()
+            && extensions.iter().any(|e| ext == *e)
+        {
+            callback(&path);
         }
     }
     Ok(())

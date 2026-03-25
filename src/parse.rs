@@ -1,3 +1,4 @@
+use crate::eval::{self, EvalType};
 use serde::Serialize;
 use std::path::Path;
 
@@ -25,6 +26,8 @@ pub struct Harness {
 pub struct Eval {
     pub name: String,
     pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub eval_type: Option<EvalType>,
 }
 
 pub fn detect_language(path: &Path) -> Language {
@@ -83,10 +86,10 @@ fn extract_python_docstring(content: &str) -> String {
     let trimmed = content.trim_start();
     // Look for """ or '''
     for delim in ["\"\"\"", "'''"] {
-        if trimmed.starts_with(delim) {
-            if let Some(end) = trimmed[delim.len()..].find(delim) {
-                return trimmed[delim.len()..delim.len() + end].to_string();
-            }
+        if let Some(stripped) = trimmed.strip_prefix(delim)
+            && let Some(end) = stripped.find(delim)
+        {
+            return stripped[..end].to_string();
         }
     }
     String::new()
@@ -95,18 +98,18 @@ fn extract_python_docstring(content: &str) -> String {
 /// Extract JSDoc/KDoc `/** ... */` comment at top of file.
 fn extract_jsdoc_comment(content: &str) -> String {
     let trimmed = content.trim_start();
-    if trimmed.starts_with("/**") {
-        if let Some(end) = trimmed.find("*/") {
-            let block = &trimmed[3..end];
-            let lines: Vec<&str> = block
-                .lines()
-                .map(|l| {
-                    let t = l.trim();
-                    t.strip_prefix("* ").unwrap_or(t.strip_prefix("*").unwrap_or(t))
-                })
-                .collect();
-            return lines.join("\n").trim().to_string();
-        }
+    if trimmed.starts_with("/**")
+        && let Some(end) = trimmed.find("*/")
+    {
+        let block = &trimmed[3..end];
+        let lines: Vec<&str> = block
+            .lines()
+            .map(|l| {
+                let t = l.trim();
+                t.strip_prefix("* ").unwrap_or(t.strip_prefix("*").unwrap_or(t))
+            })
+            .collect();
+        return lines.join("\n").trim().to_string();
     }
     String::new()
 }
@@ -206,10 +209,10 @@ fn find_rust_test_names(content: &str) -> Vec<String> {
         }
         if prev_was_test_attr {
             // Look for fn name
-            if let Some(rest) = trimmed.strip_prefix("fn ") {
-                if let Some(name) = rest.split('(').next() {
-                    names.push(name.trim().to_string());
-                }
+            if let Some(rest) = trimmed.strip_prefix("fn ")
+                && let Some(name) = rest.split('(').next()
+            {
+                names.push(name.trim().to_string());
             }
             prev_was_test_attr = false;
         }
@@ -260,8 +263,24 @@ enum Section {
     Evals,
 }
 
-/// Parse an eval entry like "name: description → expected"
+/// Parse an eval entry like "name: description → expected" or "name [type]: description"
 fn parse_eval_entry(text: &str) -> Option<Eval> {
+    // Check for type annotation: "name [boolean]: desc" or "name [range: 5..10]: desc"
+    if let Some(bracket_start) = text.find('[')
+        && let Some(bracket_end) = text[bracket_start..].find(']')
+    {
+        let annotation = &text[bracket_start + 1..bracket_start + bracket_end];
+        let eval_type = eval::parse_eval_type(annotation);
+        let before = &text[..bracket_start];
+        let after = &text[bracket_start + bracket_end + 1..];
+        let remaining = format!("{}{}", before.trim(), after);
+        return parse_eval_entry_inner(&remaining, eval_type);
+    }
+
+    parse_eval_entry_inner(text, None)
+}
+
+fn parse_eval_entry_inner(text: &str, eval_type: Option<EvalType>) -> Option<Eval> {
     // Format: "name: description" or "name — description"
     let (name, description) = if let Some(pos) = text.find(": ") {
         (&text[..pos], &text[pos + 2..])
@@ -284,6 +303,7 @@ fn parse_eval_entry(text: &str) -> Option<Eval> {
     Some(Eval {
         name,
         description: description.trim().to_string(),
+        eval_type,
     })
 }
 

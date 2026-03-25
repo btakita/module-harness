@@ -1,6 +1,6 @@
 # module-harness Ontology
 
-Domain ontology for the module-harness system, extending the [existence-lang](https://github.com/nicholasgasior/existence-lang) kernel vocabulary.
+Domain ontology for the module-harness system, extending the [existence-lang](https://github.com/btakita/existence-lang) kernel vocabulary.
 
 ## Terms
 
