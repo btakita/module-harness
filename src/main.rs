@@ -32,6 +32,18 @@ enum Command {
         /// Source file to check
         file: PathBuf,
     },
+    /// Report eval coverage: which evals have matching tests
+    Coverage {
+        /// Directory to scan (default: current directory)
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// File extensions to scan (comma-separated, e.g. "rs,py,ts")
+        #[arg(short, long)]
+        ext: Option<String>,
+        /// Output as JSON instead of human-readable
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -41,6 +53,7 @@ fn main() -> Result<()> {
         Command::Parse { file } => cmd_parse(&file),
         Command::Inventory { dir, ext } => cmd_inventory(&dir, ext.as_deref()),
         Command::Diff { file } => cmd_diff(&file),
+        Command::Coverage { dir, ext, json } => cmd_coverage(&dir, ext.as_deref(), json),
     }
 }
 
@@ -99,6 +112,80 @@ fn cmd_diff(file: &Path) -> Result<()> {
         println!("Spec entries: {}", harness.spec.len());
         println!("Contracts: {}", harness.contracts.len());
         println!("Evals: {}", harness.evals.len());
+    }
+    Ok(())
+}
+
+fn cmd_coverage(dir: &Path, ext_filter: Option<&str>, json_output: bool) -> Result<()> {
+    let extensions: Vec<&str> = ext_filter
+        .map(|e| e.split(',').collect())
+        .unwrap_or_else(|| vec!["rs", "py", "ts", "js", "go", "kt", "java"]);
+
+    let mut modules_total = 0usize;
+    let mut modules_with_harness = 0usize;
+    let mut evals_total = 0usize;
+    let mut evals_covered = 0usize;
+    let mut module_reports = Vec::new();
+
+    walk_files(dir, &extensions, &mut |path| {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let lang = parse::detect_language(path);
+        let harness = parse::extract_harness(&content, lang);
+
+        modules_total += 1;
+        if !harness.module.is_empty() || !harness.spec.is_empty() {
+            modules_with_harness += 1;
+        }
+
+        // Find test functions in the file
+        let test_names = parse::find_test_names(&content, lang);
+
+        let mut eval_results = Vec::new();
+        for eval in &harness.evals {
+            evals_total += 1;
+            let covered = test_names.iter().any(|t| {
+                t == &eval.name || t.contains(&eval.name) || eval.name.contains(t.as_str())
+            });
+            if covered {
+                evals_covered += 1;
+            }
+            eval_results.push(serde_json::json!({
+                "name": eval.name,
+                "covered": covered,
+                "description": eval.description,
+            }));
+        }
+
+        if !harness.evals.is_empty() {
+            module_reports.push(serde_json::json!({
+                "file": path.display().to_string(),
+                "module": harness.module,
+                "evals": eval_results,
+            }));
+        }
+    })?;
+
+    if json_output {
+        let report = serde_json::json!({
+            "modules_total": modules_total,
+            "modules_with_harness": modules_with_harness,
+            "evals_total": evals_total,
+            "evals_covered": evals_covered,
+            "coverage_ratio": if evals_total > 0 { evals_covered as f64 / evals_total as f64 } else { 0.0 },
+            "completeness": if modules_total > 0 { modules_with_harness as f64 / modules_total as f64 } else { 0.0 },
+            "modules": module_reports,
+        });
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!("Module coverage: {}/{} ({:.0}%)",
+            modules_with_harness, modules_total,
+            if modules_total > 0 { modules_with_harness as f64 / modules_total as f64 * 100.0 } else { 0.0 });
+        println!("Eval coverage:   {}/{} ({:.0}%)",
+            evals_covered, evals_total,
+            if evals_total > 0 { evals_covered as f64 / evals_total as f64 * 100.0 } else { 0.0 });
     }
     Ok(())
 }

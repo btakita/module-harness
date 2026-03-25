@@ -185,6 +185,73 @@ fn parse_harness_sections(text: &str) -> Harness {
     harness
 }
 
+/// Find test function names in source code.
+pub fn find_test_names(content: &str, lang: Language) -> Vec<String> {
+    match lang {
+        Language::Rust => find_rust_test_names(content),
+        Language::Python => find_python_test_names(content),
+        Language::TypeScript | Language::JavaScript => find_js_test_names(content),
+        _ => Vec::new(),
+    }
+}
+
+fn find_rust_test_names(content: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut prev_was_test_attr = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed == "#[test]" || trimmed.starts_with("#[test]") {
+            prev_was_test_attr = true;
+            continue;
+        }
+        if prev_was_test_attr {
+            // Look for fn name
+            if let Some(rest) = trimmed.strip_prefix("fn ") {
+                if let Some(name) = rest.split('(').next() {
+                    names.push(name.trim().to_string());
+                }
+            }
+            prev_was_test_attr = false;
+        }
+    }
+    names
+}
+
+fn find_python_test_names(content: &str) -> Vec<String> {
+    content.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.starts_with("def test_") {
+                trimmed.strip_prefix("def ")
+                    .and_then(|rest| rest.split('(').next())
+                    .map(|name| name.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn find_js_test_names(content: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        // Match: it("name", ...) or test("name", ...)
+        for prefix in ["it(", "test("] {
+            if let Some(rest) = trimmed.strip_prefix(prefix) {
+                let quote = rest.chars().next();
+                if matches!(quote, Some('"') | Some('\'') | Some('`')) {
+                    let q = quote.unwrap();
+                    if let Some(end) = rest[1..].find(q) {
+                        names.push(rest[1..1 + end].to_string());
+                    }
+                }
+            }
+        }
+    }
+    names
+}
+
 #[derive(Clone, Copy)]
 enum Section {
     None,
