@@ -19,3 +19,9 @@ jobs:
       - run: cargo clippy -- -D warnings
 
       - run: cargo test
+
+      - name: Install existence CLI
+        run: cargo install existence
+
+      - name: Lint ontology
+        run: existence --ontology ontology lint
