@@ -1,0 +1,1 @@
+/home/brian/work/btakita/agent-loop/src/module-harness/target/debug/module-harness: /home/brian/work/btakita/agent-loop/src/module-harness/src/main.rs /home/brian/work/btakita/agent-loop/src/module-harness/src/parse.rs
