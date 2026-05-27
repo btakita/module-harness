@@ -1,12 +1,15 @@
 [package]
 name = "module-harness"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "Parse, validate, and generate module-level harness context (spec, contracts, evals) for any programming language"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/btakita/module-harness"
 keywords = ["testing", "harness", "spec", "contracts", "evals"]
 categories = ["development-tools", "development-tools::testing"]
+
+[lib]
+name = "module_harness"
 
 [dependencies]
 anyhow = "1"

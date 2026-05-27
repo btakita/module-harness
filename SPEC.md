@@ -7,12 +7,16 @@ Provide deterministic tooling for managing module-level harness context — stru
 ## Architecture
 
 ```
-module-harness (binary — deterministic)
+module-harness (library — deterministic types + parsing)
+├── eval      → EvalType, EvalResult, Direction, parse_eval_type()
+└── parse     → Language, Harness, Eval, extract_harness(), find_test_names()
+
+module-harness (binary — deterministic CLI)
 ├── parse <file>          → JSON of existing harness sections
 ├── inventory [dir]       → list all evals across modules
 ├── diff <file>           → show harness summary / drift
-├── coverage [dir]        → match evals to test functions (planned)
-└── format <file> --lang  → write harness from JSON input (planned)
+├── coverage [dir]        → match evals to test functions
+└── score / score-file    → score evals against values
 
 module-harness (skill — non-deterministic, LLM-powered)
 ├── /module-harness <file>        → generate/update harness for one module
@@ -20,8 +24,8 @@ module-harness (skill — non-deterministic, LLM-powered)
 └── /module-harness audit <dir>   → report drift and coverage
 ```
 
-**Binary** handles structure: parsing, validation, inventory, metrics.
-**Skill** handles understanding: reading code, writing specs, inferring contracts.
+**Library** exposes parsing, eval scoring, and language detection as reusable Rust types.
+**Binary** handles CLI interaction: parsing, validation, inventory, metrics.
 
 ## Harness Sections
 

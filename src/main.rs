@@ -1,9 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use module_harness::{eval, parse};
 use std::path::{Path, PathBuf};
-
-mod eval;
-mod parse;
 
 #[derive(Parser)]
 #[command(name = "module-harness", about = "Module-level harness context management")]
