@@ -35,7 +35,10 @@ install-hooks:
 
 # Publish to crates.io
 publish:
-	cargo publish
+	@set +x; \
+		token="$$(passage btak/CARGO_REGISTRY_TOKEN)" || { printf '%s\n' 'CARGO_REGISTRY_TOKEN lookup failed' >&2; exit 1; }; \
+		test -n "$$token" || { printf '%s\n' 'CARGO_REGISTRY_TOKEN lookup returned empty' >&2; exit 1; }; \
+		CARGO_REGISTRY_TOKEN="$$token" cargo publish
 
 # Remove build artifacts
 clean:
